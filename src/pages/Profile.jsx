@@ -13,7 +13,7 @@ import { friendlyError } from '../utils/errors.js';
 import { formatDate, initials } from '../utils/format.js';
 
 export default function Profile() {
-  const { user, profile, setProfile, updatePassword, isAdmin } = useAuth();
+  const { user, profile, setProfile, updatePassword, isAdmin, isTeacher } = useAuth();
   const toast = useToast();
 
   const [form, setForm] = useState({
@@ -80,6 +80,10 @@ export default function Profile() {
           <p className="muted">
             {user.email} · Member since {formatDate(profile?.created_at)}
             {isAdmin && <span className="badge badge--blue" style={{ marginLeft: 8 }}>Administrator</span>}
+            {isTeacher && <span className="badge badge--green" style={{ marginLeft: 8 }}>Teacher</span>}
+            {!isAdmin && !isTeacher && profile?.teacher_requested && (
+              <span className="badge badge--gold" style={{ marginLeft: 8 }}>Teacher request pending</span>
+            )}
           </p>
         </div>
       </section>

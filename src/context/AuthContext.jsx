@@ -61,12 +61,16 @@ export function AuthProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  const signUp = useCallback(async ({ email, password, fullName, country }) => {
+  const signUp = useCallback(async ({ email, password, fullName, country, requestedRole }) => {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
-        data: { full_name: fullName.trim(), country: country || null },
+        data: {
+          full_name: fullName.trim(),
+          country: country || null,
+          requested_role: requestedRole === 'teacher' ? 'teacher' : 'student',
+        },
         emailRedirectTo: `${window.location.origin}/login`,
       },
     });
@@ -121,6 +125,8 @@ export function AuthProvider({ children }) {
       profileLoading: Boolean(userId) && profileLoadedFor !== userId,
       isAuthenticated: Boolean(session),
       isAdmin: profile?.role === 'admin',
+      isTeacher: profile?.role === 'teacher',
+      isStaff: profile?.role === 'admin' || profile?.role === 'teacher',
       displayName: profile?.full_name || user?.user_metadata?.full_name || user?.email || 'Student',
       signUp,
       signIn,

@@ -13,7 +13,8 @@ A free, all-in-one online examination preparation platform. Students register, l
 - Student dashboard: totals, average/highest score, charts, subject-wise performance, continue preparation, recommendations, history, profile settings
 - Exam engine: 4-option MCQs, countdown timer (server-clock based), auto-submit, question navigator, mark for review, progress bar, confirmation before submit, resume after refresh
 - Automatic grading **on the server**; result page with score ring, pass/fail, per-question review, explanations, time taken, retake
-- Admin panel: exams, questions, categories/subjects, resources, contact messages, publish/unpublish
+- Roles: **student**, **teacher** and **admin**. Teachers create and publish their own exams; admins supervise everything and approve teachers
+- Admin panel: exams, questions, users & teacher approval, categories/subjects, resources, contact messages, publish/unpublish
 - Mobile, tablet and desktop responsive; loading, error and empty states; toast notifications
 
 ## Security model
@@ -21,7 +22,8 @@ A free, all-in-one online examination preparation platform. Students register, l
 - Only the public **anon** key is used in the browser. **Never** put the `service_role` key in this project.
 - Correct answers live in the `question_answers` table which students cannot read. Grading happens inside the database (`submit_attempt`), and answers are revealed only by `get_attempt_review` **after** submission.
 - Students cannot insert or update attempts, answers or results directly (no write policies, only the SECURITY DEFINER functions).
-- Admin access is role based (`profiles.role = 'admin'`). A trigger blocks role changes from the app; you promote an admin from the Supabase SQL editor.
+- Access is role based (`profiles.role` = `student`, `teacher` or `admin`). Nobody can change their own role: a trigger blocks it. Admins approve teachers in **Admin → Users & teachers**; the first admin is created from the Supabase SQL editor.
+- Teachers can only see, edit and delete the exams (and answers) they created. Only admins can feature exams, manage categories, resources and users.
 - Passwords are handled entirely by Supabase Auth (salted hashes). No passwords are stored in your tables or code.
 
 ## Folder structure
@@ -86,15 +88,15 @@ In **Authentication → URL Configuration**:
 - **Redirect URLs:** add `http://localhost:5173/**` and `https://YOUR-APP.vercel.app/**`.
 
 In **Authentication → Providers → Email**:
-- *Confirm email* ON (recommended for production): new students must click the link in their inbox. The app shows a "Check your email" screen.
-- *Confirm email* OFF (easier for testing): students are logged in immediately after registering.
+- *Confirm email* **OFF** (no email confirmation): people are logged in immediately after registering. Turn it off at **Authentication → Sign In / Providers → Email → Confirm email**.
+- *Confirm email* ON: new users must click the link in their inbox first. The app shows a "Check your email" screen.
 
 Password reset emails link back to `/reset-password` in this app.
 
 ## 4. Create the database tables and security policies
 
 1. Open **SQL Editor → New query**.
-2. Paste the whole contents of `supabase/schema.sql` and click **Run**. This creates all tables (`profiles`, `categories`, `subjects`, `exams`, `questions`, `options`, `question_answers`, `exam_attempts`, `student_answers`, `results`, `resources`, `contact_messages`), enables Row Level Security, and adds the policies and exam-engine functions. It is safe to run again.
+2. Paste the whole contents of `supabase/schema.sql` and click **Run**. (If you installed an earlier version, just run the new `schema.sql` again: it upgrades your database safely and keeps your data.) This creates all tables (`profiles`, `categories`, `subjects`, `exams`, `questions`, `options`, `question_answers`, `exam_attempts`, `student_answers`, `results`, `resources`, `contact_messages`), enables Row Level Security, and adds the policies and exam-engine functions. It is safe to run again.
 3. New query → paste `supabase/seed.sql` → **Run**. This adds all categories and subjects from the brief, 8 published sample exams with 66 questions and explanations, and some free resources.
 
 ## 5. Make yourself an administrator
@@ -106,6 +108,12 @@ Password reset emails link back to `/reset-password` in this app.
    where id = (select id from auth.users where email = 'you@example.com');
    ```
 3. Refresh the app. An **Admin panel** link appears in your account menu. Only the SQL editor can change roles - the app cannot.
+
+### Teachers
+1. On the Register page a person chooses **Student** or **Teacher**. A teacher starts as a normal student account with a pending request.
+2. As admin open **Admin panel → Users & teachers** and click **Approve teacher**.
+3. The teacher then sees a **Teacher panel** in their account menu, where they create exams, add questions and publish them. They see only their own exams.
+4. As admin, **Exams & questions** lists every exam with a *Created by* column. You can edit, unpublish or delete any exam.
 
 ### Using the admin panel
 - **Exams & questions:** create an exam (duration, total marks, passing percentage, type, category/subject), open *Manage questions* to add MCQs (4 options, correct answer, explanation), then **Publish**. An exam needs at least one question before it can be published.

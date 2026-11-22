@@ -49,13 +49,47 @@ export async function adminFetchOverview() {
 }
 
 /* ---------- Exams ---------- */
-export async function adminListExams() {
-  const { data, error } = await supabase
+/**
+ * Lists exams. Administrators get every exam (with the creator's name);
+ * pass { ownerId } to list only one teacher's own exams.
+ */
+export async function adminListExams({ ownerId } = {}) {
+  let query = supabase
     .from('exams')
     .select('*, category:categories(id, name), subject:subjects(id, name)')
     .order('created_at', { ascending: false });
+  if (ownerId) query = query.eq('created_by', ownerId);
+  const { data, error } = await query;
+  if (error) throw error;
+  const exams = data || [];
+
+  const creatorIds = [...new Set(exams.map((e) => e.created_by).filter(Boolean))];
+  const names = {};
+  if (!ownerId && creatorIds.length > 0) {
+    const { data: people } = await supabase
+      .from('profiles')
+      .select('id, full_name, role')
+      .in('id', creatorIds);
+    (people || []).forEach((p) => {
+      names[p.id] = p;
+    });
+  }
+  return exams.map((e) => ({ ...e, creator: names[e.created_by] || null }));
+}
+
+/* ---------- Users & teacher approval (administrators only) ---------- */
+export async function adminListUsers() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, email, full_name, country, role, teacher_requested, created_at')
+    .order('created_at', { ascending: false });
   if (error) throw error;
   return data || [];
+}
+
+export async function adminSetUserRole(userId, role) {
+  const { error } = await supabase.rpc('admin_set_user_role', { p_user: userId, p_role: role });
+  if (error) throw error;
 }
 
 export async function adminFetchExam(examId) {

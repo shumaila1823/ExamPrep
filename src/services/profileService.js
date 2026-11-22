@@ -3,7 +3,7 @@ import { supabase } from '../supabase/client';
 export async function fetchProfile(userId) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, full_name, country, role, show_on_leaderboard, created_at')
+    .select('id, email, full_name, country, role, teacher_requested, show_on_leaderboard, created_at')
     .eq('id', userId)
     .maybeSingle();
   if (error) throw error;
@@ -40,7 +40,7 @@ export async function updateProfile(userId, patch) {
       show_on_leaderboard: patch.show_on_leaderboard,
     })
     .eq('id', userId)
-    .select('id, full_name, country, role, show_on_leaderboard, created_at')
+    .select('id, email, full_name, country, role, teacher_requested, show_on_leaderboard, created_at')
     .single();
   if (error) throw error;
   return data;

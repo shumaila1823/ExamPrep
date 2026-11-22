@@ -26,7 +26,7 @@ const LINKS = [
 ];
 
 export default function Navbar() {
-  const { isAuthenticated, isAdmin, displayName, signOut } = useAuth();
+  const { isAuthenticated, isAdmin, isStaff, displayName, signOut } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -110,9 +110,9 @@ export default function Navbar() {
                   <Link to="/profile" role="menuitem" className="user-menu__item">
                     <UserCircle size={16} /> Profile settings
                   </Link>
-                  {isAdmin && (
+                  {isStaff && (
                     <Link to="/admin" role="menuitem" className="user-menu__item">
-                      <ShieldCheck size={16} /> Admin panel
+                      <ShieldCheck size={16} /> {isAdmin ? 'Admin panel' : 'Teacher panel'}
                     </Link>
                   )}
                   <button type="button" role="menuitem" className="user-menu__item user-menu__item--danger" onClick={handleLogout}>
@@ -160,7 +160,7 @@ export default function Navbar() {
                 <NavLink to="/history" className={navLinkClass}>Test history</NavLink>
                 <NavLink to="/leaderboard" className={navLinkClass}>Leaderboard</NavLink>
                 <NavLink to="/profile" className={navLinkClass}>Profile settings</NavLink>
-                {isAdmin && <NavLink to="/admin" className={navLinkClass}>Admin panel</NavLink>}
+                {isStaff && <NavLink to="/admin" className={navLinkClass}>{isAdmin ? 'Admin panel' : 'Teacher panel'}</NavLink>}
                 <button type="button" className="navbar__link navbar__link--button" onClick={handleLogout}>
                   Log out
                 </button>

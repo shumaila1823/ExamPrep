@@ -38,7 +38,9 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   full_name text not null default '' check (char_length(full_name) <= 100),
   country text check (country is null or char_length(country) <= 80),
-  role text not null default 'student' check (role in ('student', 'admin')),
+  email text,
+  role text not null default 'student' check (role in ('student', 'teacher', 'admin')),
+  teacher_requested boolean not null default false,
   show_on_leaderboard boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -49,15 +51,28 @@ create trigger trg_profiles_updated
   before update on public.profiles
   for each row execute function public.set_updated_at();
 
--- Only the SQL editor / service role (where auth.uid() is null) may change a role.
+-- Upgrade for databases created before the teacher role existed (safe to re-run).
+alter table public.profiles add column if not exists email text;
+alter table public.profiles add column if not exists teacher_requested boolean not null default false;
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('student', 'teacher', 'admin'));
+update public.profiles p set email = u.email
+  from auth.users u where u.id = p.id and p.email is null;
+
+-- Roles can only be changed by the SQL editor / service role (auth.uid() is null)
+-- or by an administrator through admin_set_user_role(), which sets a local flag.
 create or replace function public.protect_profile_role()
 returns trigger
 language plpgsql
 as $$
 begin
-  if new.role is distinct from old.role and auth.uid() is not null then
-    raise exception 'Roles can only be changed from the Supabase SQL editor.'
-      using errcode = '42501';
+  if auth.uid() is not null and coalesce(current_setting('app.role_change', true), '') <> 'on' then
+    if new.role is distinct from old.role then
+      raise exception 'Only an administrator can change roles.'
+        using errcode = '42501';
+    end if;
+    new.email := old.email;
   end if;
   return new;
 end;
@@ -90,11 +105,13 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, full_name, country)
+  insert into public.profiles (id, email, full_name, country, teacher_requested)
   values (
     new.id,
+    new.email,
     left(coalesce(nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''), split_part(new.email, '@', 1)), 100),
-    left(nullif(trim(new.raw_user_meta_data ->> 'country'), ''), 80)
+    left(nullif(trim(new.raw_user_meta_data ->> 'country'), ''), 80),
+    coalesce(new.raw_user_meta_data ->> 'requested_role', '') = 'teacher'
   )
   on conflict (id) do nothing;
   return new;
@@ -299,6 +316,73 @@ create table if not exists public.contact_messages (
 );
 
 -- ---------------------------------------------------------------------
+-- 6b. Role helpers (teachers manage only the exams they created)
+-- ---------------------------------------------------------------------
+create or replace function public.is_teacher()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.role = 'teacher'
+  );
+$$;
+
+create or replace function public.owns_exam(p_exam uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_teacher() and exists (
+    select 1 from public.exams e
+    where e.id = p_exam and e.created_by = auth.uid()
+  );
+$$;
+
+create or replace function public.owns_question(p_question uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_teacher() and exists (
+    select 1 from public.questions q
+    join public.exams e on e.id = q.exam_id
+    where q.id = p_question and e.created_by = auth.uid()
+  );
+$$;
+
+-- Only administrators may feature exams on the homepage.
+create or replace function public.protect_exam_featured()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is not null and not public.is_admin() then
+    if tg_op = 'INSERT' then
+      new.is_featured := false;
+    else
+      new.is_featured := old.is_featured;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_exams_protect_featured on public.exams;
+create trigger trg_exams_protect_featured
+  before insert or update on public.exams
+  for each row execute function public.protect_exam_featured();
+
+-- ---------------------------------------------------------------------
 -- 7. Row Level Security
 -- ---------------------------------------------------------------------
 alter table public.profiles          enable row level security;
@@ -350,10 +434,24 @@ create policy "subjects_admin_write" on public.subjects
 drop policy if exists "exams_public_read_published" on public.exams;
 create policy "exams_public_read_published" on public.exams
   for select to anon, authenticated
-  using (is_published = true or public.is_admin());
+  using (is_published = true or public.is_admin() or created_by = auth.uid());
 drop policy if exists "exams_admin_write" on public.exams;
 create policy "exams_admin_write" on public.exams
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "exams_teacher_insert" on public.exams;
+create policy "exams_teacher_insert" on public.exams
+  for insert to authenticated
+  with check (public.is_teacher() and created_by = auth.uid());
+drop policy if exists "exams_teacher_update" on public.exams;
+create policy "exams_teacher_update" on public.exams
+  for update to authenticated
+  using (public.is_teacher() and created_by = auth.uid())
+  with check (public.is_teacher() and created_by = auth.uid());
+drop policy if exists "exams_teacher_delete" on public.exams;
+create policy "exams_teacher_delete" on public.exams
+  for delete to authenticated
+  using (public.is_teacher() and created_by = auth.uid());
 
 -- questions + options (visible only for published exams, and only to
 -- logged-in users; they contain NO answers) ----------------------------
@@ -362,17 +460,23 @@ create policy "questions_read_published" on public.questions
   for select to authenticated
   using (
     public.is_admin()
+    or public.owns_exam(exam_id)
     or exists (select 1 from public.exams e where e.id = questions.exam_id and e.is_published)
   );
 drop policy if exists "questions_admin_write" on public.questions;
 create policy "questions_admin_write" on public.questions
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "questions_teacher_write" on public.questions;
+create policy "questions_teacher_write" on public.questions
+  for all to authenticated
+  using (public.owns_exam(exam_id)) with check (public.owns_exam(exam_id));
 
 drop policy if exists "options_read_published" on public.options;
 create policy "options_read_published" on public.options
   for select to authenticated
   using (
     public.is_admin()
+    or public.owns_question(question_id)
     or exists (
       select 1
       from public.questions q
@@ -383,11 +487,20 @@ create policy "options_read_published" on public.options
 drop policy if exists "options_admin_write" on public.options;
 create policy "options_admin_write" on public.options
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "options_teacher_write" on public.options;
+create policy "options_teacher_write" on public.options
+  for all to authenticated
+  using (public.owns_question(question_id)) with check (public.owns_question(question_id));
 
--- question_answers: ADMIN ONLY (students can never read correct answers) -
+-- question_answers: admins + the teacher who owns the exam (students never) -
 drop policy if exists "question_answers_admin_only" on public.question_answers;
 create policy "question_answers_admin_only" on public.question_answers
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
+-- teachers can read/write the answers of THEIR OWN exams only
+drop policy if exists "question_answers_teacher_own" on public.question_answers;
+create policy "question_answers_teacher_own" on public.question_answers
+  for all to authenticated
+  using (public.owns_question(question_id)) with check (public.owns_question(question_id));
 
 -- attempts / answers / results: owner can read; nobody writes directly --
 drop policy if exists "attempts_select_own" on public.exam_attempts;
@@ -706,11 +819,11 @@ declare
   v_correct_opt uuid;
   i integer;
 begin
-  if not public.is_admin() then
-    raise exception 'Administrator access required.' using errcode = '42501';
+  v_exam := (p_question ->> 'exam_id')::uuid;
+  if not (public.is_admin() or public.owns_exam(v_exam)) then
+    raise exception 'You do not have permission to edit this exam.' using errcode = '42501';
   end if;
 
-  v_exam := (p_question ->> 'exam_id')::uuid;
   v_text := nullif(trim(p_question ->> 'question_text'), '');
   v_opts := p_question -> 'options';
   v_correct := (p_question ->> 'correct_index')::integer;
@@ -830,6 +943,33 @@ as $$
    limit least(greatest(coalesce(p_limit, 50), 1), 100);
 $$;
 
+-- 9.6b Admin: change a user's role (approve teachers) -----------------
+create or replace function public.admin_set_user_role(p_user uuid, p_role text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Administrator access required.' using errcode = '42501';
+  end if;
+  if p_role not in ('student', 'teacher', 'admin') then
+    raise exception 'Invalid role.';
+  end if;
+  if p_user = auth.uid() then
+    raise exception 'You cannot change your own role.';
+  end if;
+  perform set_config('app.role_change', 'on', true);
+  update public.profiles
+     set role = p_role, teacher_requested = false
+   where id = p_user;
+  if not found then
+    raise exception 'User not found.';
+  end if;
+end;
+$$;
+
 -- 9.7 Function permissions --------------------------------------------
 revoke all on function public.start_attempt(uuid) from public, anon;
 revoke all on function public.submit_attempt(uuid, jsonb) from public, anon;
@@ -839,6 +979,8 @@ grant execute on function public.start_attempt(uuid) to authenticated;
 grant execute on function public.submit_attempt(uuid, jsonb) to authenticated;
 grant execute on function public.get_attempt_review(uuid) to authenticated;
 grant execute on function public.admin_upsert_question(jsonb) to authenticated;
+revoke all on function public.admin_set_user_role(uuid, text) from public, anon;
+grant execute on function public.admin_set_user_role(uuid, text) to authenticated;
 
 revoke all on function public.get_platform_stats() from public;
 revoke all on function public.get_leaderboard(integer, integer) from public;

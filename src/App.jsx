@@ -1,4 +1,5 @@
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from './context/AuthContext.jsx';
 import { isSupabaseConfigured } from './supabase/client.js';
 import ScrollToTop from './components/common/ScrollToTop.jsx';
 import MainLayout from './layouts/MainLayout.jsx';
@@ -31,6 +32,7 @@ import AdminQuestions from './pages/admin/AdminQuestions.jsx';
 import AdminTaxonomy from './pages/admin/AdminTaxonomy.jsx';
 import AdminResources from './pages/admin/AdminResources.jsx';
 import AdminMessages from './pages/admin/AdminMessages.jsx';
+import AdminUsers from './pages/admin/AdminUsers.jsx';
 
 function SetupNotice() {
   return (
@@ -45,6 +47,12 @@ function SetupNotice() {
       </div>
     </div>
   );
+}
+
+/** /admin shows the overview to administrators and sends teachers straight to their exams. */
+function PanelHome() {
+  const { isAdmin } = useAuth();
+  return isAdmin ? <AdminOverview /> : <Navigate to="/admin/exams" replace />;
 }
 
 export default function App() {
@@ -77,15 +85,19 @@ export default function App() {
             <Route path="results/:attemptId" element={<Result />} />
           </Route>
 
-          {/* Administrators only */}
-          <Route element={<AdminRoute />}>
+          {/* Teachers (own exams) and administrators */}
+          <Route element={<AdminRoute staff />}>
             <Route path="admin" element={<AdminLayout />}>
-              <Route index element={<AdminOverview />} />
+              <Route index element={<PanelHome />} />
               <Route path="exams" element={<AdminExams />} />
               <Route path="exams/:examId/questions" element={<AdminQuestions />} />
-              <Route path="taxonomy" element={<AdminTaxonomy />} />
-              <Route path="resources" element={<AdminResources />} />
-              <Route path="messages" element={<AdminMessages />} />
+              {/* Administrators only */}
+              <Route element={<AdminRoute />}>
+                <Route path="users" element={<AdminUsers />} />
+                <Route path="taxonomy" element={<AdminTaxonomy />} />
+                <Route path="resources" element={<AdminResources />} />
+                <Route path="messages" element={<AdminMessages />} />
+              </Route>
             </Route>
           </Route>
 

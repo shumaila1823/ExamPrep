@@ -314,3 +314,15 @@ a.chip:hover, button.chip:hover { border-color: var(--electric); color: var(--el
   .sidebar-layout .table td { border: 0; padding: 4px 12px; display: flex; justify-content: space-between; gap: 12px; text-align: right; }
   .sidebar-layout .table td[data-label]::before { content: attr(data-label); font-weight: 600; color: var(--muted); text-align: left; }
 }
+
+/* Registration role picker */
+.role-picker { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.role-picker .field__label { grid-column: 1 / -1; }
+.role-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 2px solid var(--line); border-radius: 14px; cursor: pointer; color: var(--muted); transition: border-color 0.15s, background 0.15s; }
+.role-option:hover { border-color: var(--electric-400); }
+.role-option.is-selected { border-color: var(--electric); background: #eaf1ff; color: var(--electric-600); }
+.role-option input { position: absolute; opacity: 0; pointer-events: none; }
+.role-option span { display: flex; flex-direction: column; line-height: 1.3; }
+.role-option strong { color: var(--ink); }
+.role-option small { color: var(--muted); font-size: 0.78rem; }
+@media (max-width: 520px) { .role-picker { grid-template-columns: 1fr; } }

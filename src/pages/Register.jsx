@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { Mail, User, Globe, UserPlus, MailCheck } from 'lucide-react';
+import { Mail, User, Globe, UserPlus, MailCheck, GraduationCap, Presentation } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { TextField, FormField } from '../components/common/Fields.jsx';
@@ -12,7 +12,7 @@ import { COUNTRIES } from '../utils/constants.js';
 import { getPasswordIssues, isValidEmail } from '../utils/validators.js';
 import { friendlyError } from '../utils/errors.js';
 
-const EMPTY = { fullName: '', email: '', password: '', confirm: '', country: '' };
+const EMPTY = { fullName: '', email: '', password: '', confirm: '', country: '', requestedRole: 'student' };
 
 export default function Register() {
   const { signUp, isAuthenticated, initializing } = useAuth();
@@ -110,6 +110,19 @@ export default function Register() {
               </select>
             </div>
           </FormField>
+          <fieldset className="role-picker">
+            <legend className="field__label">I am a</legend>
+            <label className={`role-option ${form.requestedRole === 'student' ? 'is-selected' : ''}`}>
+              <input type="radio" name="role" value="student" checked={form.requestedRole === 'student'} onChange={set('requestedRole')} />
+              <GraduationCap size={20} aria-hidden="true" />
+              <span><strong>Student</strong><small>Practise exams and track progress</small></span>
+            </label>
+            <label className={`role-option ${form.requestedRole === 'teacher' ? 'is-selected' : ''}`}>
+              <input type="radio" name="role" value="teacher" checked={form.requestedRole === 'teacher'} onChange={set('requestedRole')} />
+              <Presentation size={20} aria-hidden="true" />
+              <span><strong>Teacher</strong><small>Create exams for students (needs admin approval)</small></span>
+            </label>
+          </fieldset>
           <Button type="submit" size="lg" block icon={UserPlus} loading={loading}>
             Create account
           </Button>

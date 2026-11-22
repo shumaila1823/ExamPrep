@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { Link } from 'react-router-dom';
 import { Plus, Pencil, Trash2, ListChecks, Eye, EyeOff, Search } from 'lucide-react';
 import {
@@ -43,7 +44,8 @@ function toForm(exam) {
 
 export default function AdminExams() {
   const toast = useToast();
-  const exams = useAsync(adminListExams, []);
+  const { user, isAdmin } = useAuth();
+  const exams = useAsync(() => adminListExams({ ownerId: isAdmin ? null : user.id }), [isAdmin, user.id]);
   const cats = useAsync(fetchCategories, []);
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
@@ -91,7 +93,11 @@ export default function AdminExams() {
       <div className="page-head page-head--left page-head--row">
         <div>
           <h1 className="page-head__title">Exams</h1>
-          <p className="page-head__text">Create exams, set duration, marks and passing percentage, then add questions.</p>
+          <p className="page-head__text">
+            {isAdmin
+              ? 'Supervise every exam on the platform. You can edit, unpublish or delete any exam, including teachers\' exams.'
+              : 'Create your exams, set duration, marks and passing percentage, then add questions and publish.'}
+          </p>
         </div>
         <Button icon={Plus} onClick={() => setEditing({ ...BLANK, category_id: cats.data[0]?.id || '' })}>
           New exam
@@ -109,7 +115,7 @@ export default function AdminExams() {
         <div className="table-wrap">
           <table className="table">
             <thead>
-              <tr><th>Exam</th><th>Type</th><th>Questions</th><th>Duration</th><th>Marks</th><th>Status</th><th>Actions</th></tr>
+              <tr><th>Exam</th>{isAdmin && <th>Created by</th>}<th>Type</th><th>Questions</th><th>Duration</th><th>Marks</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {filtered.map((e) => (
@@ -118,6 +124,18 @@ export default function AdminExams() {
                     <strong>{e.title}</strong>
                     <div className="muted">{e.category?.name}{e.subject ? ` · ${e.subject.name}` : ''}</div>
                   </td>
+                  {isAdmin && (
+                    <td data-label="Created by">
+                      {e.creator ? (
+                        <>
+                          {e.creator.full_name}
+                          {e.creator.role === 'teacher' && <span className="badge badge--green" style={{ marginLeft: 6 }}>Teacher</span>}
+                        </>
+                      ) : (
+                        <span className="muted">Sample / platform</span>
+                      )}
+                    </td>
+                  )}
                   <td data-label="Type">{EXAM_TYPES[e.exam_type]?.short}</td>
                   <td data-label="Questions">{e.question_count}</td>
                   <td data-label="Duration">{e.duration_minutes} min</td>
@@ -144,6 +162,7 @@ export default function AdminExams() {
         <ExamForm
           initial={editing}
           categories={cats.data}
+          isAdmin={isAdmin}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); exams.reload(); }}
         />
@@ -163,7 +182,7 @@ export default function AdminExams() {
   );
 }
 
-function ExamForm({ initial, categories, onClose, onSaved }) {
+function ExamForm({ initial, categories, isAdmin, onClose, onSaved }) {
   const toast = useToast();
   const [form, setForm] = useState(initial);
   const [errors, setErrors] = useState({});
@@ -207,7 +226,7 @@ function ExamForm({ initial, categories, onClose, onSaved }) {
         total_marks: marks,
         passing_percentage: form.has_pass ? pass : null,
         is_published: form.is_published,
-        is_featured: form.is_featured,
+        ...(isAdmin ? { is_featured: form.is_featured } : {}),
       });
       toast.success(form.id ? 'Exam updated.' : 'Exam created. Now add its questions.');
       onSaved();
@@ -260,10 +279,12 @@ function ExamForm({ initial, categories, onClose, onSaved }) {
           <input type="checkbox" checked={form.has_pass} onChange={set('has_pass')} />
           <span>Use a passing percentage (pass/fail is shown on results)</span>
         </label>
-        <label className="check">
-          <input type="checkbox" checked={form.is_featured} onChange={set('is_featured')} />
-          <span>Featured on the homepage</span>
-        </label>
+        {isAdmin && (
+          <label className="check">
+            <input type="checkbox" checked={form.is_featured} onChange={set('is_featured')} />
+            <span>Featured on the homepage</span>
+          </label>
+        )}
         <label className="check">
           <input type="checkbox" checked={form.is_published} onChange={set('is_published')} />
           <span>Published (visible to students)</span>
